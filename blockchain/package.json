@@ -9,12 +9,10 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "module",
-  "dependencies": {
-    "hardhat": "^3.4.3"
-  },
   "devDependencies": {
-    "@nomicfoundation/hardhat-ethers": "^4.0.10",
-    "ethers": "^6.16.0"
+    "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "ethers": "^6.16.0",
+    "hardhat": "^2.22.3"
   }
 }

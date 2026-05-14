@@ -1,4 +1,4 @@
-import hre from "hardhat";
+const hre = require("hardhat");
 
 async function main() {
   const HashStorage = await hre.ethers.getContractFactory("HashStorage");
