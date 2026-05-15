@@ -23,28 +23,30 @@ async function main() {
   await hashStorage.waitForDeployment();
   const contractAddress = await hashStorage.getAddress();
 
-  // 5. Gọi storeHash(hash) — ghi hash lên blockchain
-  const tx = await hashStorage.storeHash(originalHash);
+  const batchId = "BATCH-88902";
+
+  // 5. Gọi storeHash(batchId, hash) — ghi hash lên blockchain
+  const tx = await hashStorage.storeHash(batchId, originalHash);
 
   // 6. Chờ transaction được confirm
   const receipt = await tx.wait();
 
-  // 7. Đọc hash đã lưu bằng getHash(0)
-  const storedHash = await hashStorage.getHash(0);
+  // 7. Đọc hash bằng getHash(batchId)
+  const storedHash = await hashStorage.getHash(batchId);
 
-  // 8. So sánh hash gốc và hash đọc về
-  const isMatch = originalHash === storedHash;
+  // 8. Xác minh bằng verifyHash(batchId, hash)
+  const isVerified = await hashStorage.verifyHash(batchId, originalHash);
 
   // 9. In kết quả
   console.log("=".repeat(60));
-  console.log("  BLOCKCHAIN DEMO — HashStorage");
+  console.log("  BLOCKCHAIN DEMO — HashStorage v2");
   console.log("=".repeat(60));
 
   console.log("\n[1] Du lieu goc:");
   console.log(JSON.stringify(product, null, 2));
 
-  console.log("\n[2] JSON string:");
-  console.log(productJson);
+  console.log("\n[2] Batch ID:");
+  console.log(batchId);
 
   console.log("\n[3] SHA-256 Hash (goc):");
   console.log(originalHash);
@@ -55,15 +57,11 @@ async function main() {
   console.log("\n[5] Transaction hash (txHash):");
   console.log(receipt.hash);
 
-  console.log("\n[6] Hash doc tu blockchain (getHash(0)):");
+  console.log("\n[6] Hash doc tu blockchain (getHash(batchId)):");
   console.log(storedHash);
 
-  console.log("\n[7] Ket qua xac minh:");
-  if (isMatch) {
-    console.log("  => THANH CONG: Hash khop chinh xac!");
-  } else {
-    console.log("  => THAT BAI: Hash khong khop!");
-  }
+  console.log("\n[7] Ket qua verifyHash():");
+  console.log(" =>", isVerified ? "THANH CONG: Hash khop chinh xac!" : "THAT BAI: Hash khong khop!");
 
   console.log("=".repeat(60));
 }
