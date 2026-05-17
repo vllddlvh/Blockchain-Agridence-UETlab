@@ -1,16 +1,59 @@
+-- ==============================================================================
+-- DỰ ÁN: HỆ THỐNG TRUY XUẤT NGUỒN GỐC NÔNG SẢN TÍCH HỢP HYBRID BLOCKCHAIN
+-- PHIÊN BẢN: FINAL (Tích hợp RBAC, Event Sourcing, IPFS & Web Push)
+-- ==============================================================================
+
 -- Kích hoạt extension hỗ trợ sinh UUID tự động trong PostgreSQL
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ==========================================
--- PHẦN 1: QUẢN LÝ ĐỊNH DANH & PHÂN QUYỀN (KYB & Maker-Checker)
+-- PHẦN 1: MASTER DATA (Danh mục chuẩn hóa)
 -- ==========================================
 
--- 1. BẢNG TỔ CHỨC (Doanh nghiệp, HTX, Siêu thị - Đầu mối ký On-chain)
+-- 1. Danh mục Loại sản phẩm (VD: Cà phê, Thịt heo, Lúa gạo)
+CREATE TABLE master_product_categories (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) UNIQUE NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Danh mục Đơn vị tính (VD: KG, Tấn, Thùng, Lít)
+CREATE TABLE master_units (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(20) UNIQUE NOT NULL,
+    name VARCHAR(50) NOT NULL,
+    
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Danh mục Địa chính (Phân cấp Tỉnh -> Huyện -> Xã)
+CREATE TABLE master_locations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    parent_id UUID REFERENCES master_locations(id), 
+    name VARCHAR(255) NOT NULL,
+    type VARCHAR(20) CHECK (type IN ('PROVINCE', 'DISTRICT', 'WARD')),
+    
+    is_deleted BOOLEAN DEFAULT FALSE
+);
+
+-- ==========================================
+-- PHẦN 2: ĐỊNH DANH & PHÂN QUYỀN (RBAC & Maker-Checker)
+-- ==========================================
+
+-- 4. BẢNG TỔ CHỨC (Thực thể nắm giữ ví Blockchain và Trách nhiệm pháp lý)
 CREATE TABLE organizations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_wallet_address VARCHAR(42) UNIQUE NOT NULL, 
     name VARCHAR(255) NOT NULL,
     tax_code VARCHAR(50),
+    representative_name VARCHAR(255), -- Người đại diện pháp luật
+    license_cid VARCHAR(255),         -- CID lưu trữ bản scan Giấy phép KD trên IPFS
+    address_detail TEXT,              -- Trụ sở chính
     
     org_type VARCHAR(50) NOT NULL,
     CONSTRAINT chk_org_type CHECK (org_type IN ('FARM', 'TRANSPORTER', 'FACTORY', 'RETAILER', 'SYSTEM_ADMIN')),
@@ -20,7 +63,6 @@ CREATE TABLE organizations (
     
     reputation_score INT DEFAULT 100, 
 
-    -- Tiêu chuẩn Doanh nghiệp
     version INT DEFAULT 0, 
     is_deleted BOOLEAN DEFAULT FALSE, 
     created_by VARCHAR(255), 
@@ -29,16 +71,13 @@ CREATE TABLE organizations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. BẢNG NHÂN VIÊN (Tài khoản thao tác Web2)
+-- 5. BẢNG NHÂN VIÊN (Tài khoản thao tác Off-chain)
 CREATE TABLE users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    org_id UUID REFERENCES organizations(id), -- Multi-tenancy
+    org_id UUID REFERENCES organizations(id), -- Khóa ngoại Multi-tenancy
     email VARCHAR(255) UNIQUE NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     full_name VARCHAR(100),
-    
-    role VARCHAR(50) NOT NULL,
-    CONSTRAINT chk_user_role CHECK (role IN ('ADMIN', 'MANAGER', 'WAREHOUSE_STAFF')),
     
     version INT DEFAULT 0,
     is_deleted BOOLEAN DEFAULT FALSE,
@@ -48,7 +87,44 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 3. BẢNG LỊCH SỬ UY TÍN (Append-only Log)
+-- 6. BẢNG DANH MỤC QUYỀN (Hạt nhân phân quyền của RBAC)
+CREATE TABLE permissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) UNIQUE NOT NULL, -- VD: 'BATCH_CREATE', 'BATCH_APPROVE'
+    name VARCHAR(255) NOT NULL,
+    module VARCHAR(50) NOT NULL,      -- VD: 'TRACEABILITY', 'IDENTITY'
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 7. BẢNG VAI TRÒ (Chức danh trong tổ chức)
+CREATE TABLE roles (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    code VARCHAR(50) UNIQUE NOT NULL, -- VD: 'MANAGER', 'WAREHOUSE_STAFF'
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 8. BẢNG GÁN QUYỀN CHO VAI TRÒ (Role-Permissions Mapping)
+CREATE TABLE role_permissions (
+    role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id UUID REFERENCES permissions(id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (role_id, permission_id)
+);
+
+-- 9. BẢNG GÁN VAI TRÒ CHO NHÂN VIÊN (User-Roles Mapping)
+CREATE TABLE user_roles (
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    role_id UUID REFERENCES roles(id) ON DELETE CASCADE,
+    assigned_by VARCHAR(255), 
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, role_id)
+);
+
+-- 10. BẢNG LỊCH SỬ UY TÍN (Append-only Log chấm điểm tổ chức)
 CREATE TABLE reputation_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     org_id UUID REFERENCES organizations(id) NOT NULL,
@@ -60,21 +136,22 @@ CREATE TABLE reputation_logs (
 );
 
 -- ==========================================
--- PHẦN 2: LÕI TRUY XUẤT NGUỒN GỐC (Event Sourcing & JSONB)
+-- PHẦN 3: LÕI TRUY XUẤT NGUỒN GỐC (Event Sourcing)
 -- ==========================================
 
--- 4. BẢNG LÔ HÀNG GỐC (Root Entity)
+-- 11. BẢNG LÔ HÀNG (Định danh tĩnh và Sở hữu)
 CREATE TABLE batches (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    batch_code VARCHAR(100) UNIQUE NOT NULL,
+    batch_code VARCHAR(100) UNIQUE NOT NULL, -- Mã QR hiển thị
     creator_org_id UUID REFERENCES organizations(id) NOT NULL,
     current_owner_org_id UUID REFERENCES organizations(id) NOT NULL, 
     
+    product_category_id UUID REFERENCES master_product_categories(id),
     product_type VARCHAR(50) NOT NULL,
     CONSTRAINT chk_product_type CHECK (product_type IN ('RAW_MATERIAL', 'PROCESSED_FOOD')),
     
     is_active BOOLEAN DEFAULT TRUE, 
-    onchain_hash VARCHAR(255), 
+    onchain_hash VARCHAR(255), -- Chữ ký điện tử / TxHash khóa trên Blockchain
     
     version INT DEFAULT 0,
     is_deleted BOOLEAN DEFAULT FALSE,
@@ -84,28 +161,34 @@ CREATE TABLE batches (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 5. BẢNG SỰ KIỆN LÔ HÀNG (Lưu vết Trust but Verify)
+-- 12. BẢNG SỰ KIỆN LÔ HÀNG (Nhật ký vạn vật - Event Sourcing)
 CREATE TABLE batch_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     batch_id UUID REFERENCES batches(id) NOT NULL,
     actor_user_id UUID REFERENCES users(id) NOT NULL, 
     
     event_type VARCHAR(50) NOT NULL,
-    CONSTRAINT chk_event_type CHECK (event_type IN ('CREATED', 'FARMING_ACTIVITY', 'PROCESSING', 'TRANSPORTING', 'STORED_AND_VERIFIED', 'REJECTED', 'TRANSFORMED', 'SPLIT', 'MERGED'))
+    -- Đã mở rộng để hỗ trợ Canh tác, Giết mổ, Chế biến, Gộp/Tách lô
+    CONSTRAINT chk_event_type CHECK (event_type IN (
+        'CREATED', 'FARMING_ACTIVITY', 'PROCESSING', 
+        'TRANSPORTING', 'STORED_AND_VERIFIED', 'REJECTED', 
+        'TRANSFORMED', 'SPLIT', 'MERGED'
+    )),
     
     gps_latitude DECIMAL(10, 8),
     gps_longitude DECIMAL(11, 8),
     device_info VARCHAR(255), 
-    image_cids JSONB, 
-    metadata JSONB, 
-    onchain_event_hash VARCHAR(255),
+    
+    image_cids JSONB,  -- Mảng chứa các CID ảnh upload lên IPFS
+    metadata JSONB,    -- Linh hoạt lưu Trọng lượng, Nhiệt độ, Phân bón,...
+    onchain_event_hash VARCHAR(255), -- Hash riêng cho sự kiện (Tùy chọn)
     
     is_deleted BOOLEAN DEFAULT FALSE,
     created_by VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 6. BẢNG PHẢ HỆ LÔ HÀNG (Giải quyết gộp/tách thực phẩm)
+-- 13. BẢNG PHẢ HỆ (Giải quyết biến đổi hình thái)
 CREATE TABLE batch_lineage (
     parent_batch_id UUID REFERENCES batches(id),
     child_batch_id UUID REFERENCES batches(id),
@@ -118,10 +201,10 @@ CREATE TABLE batch_lineage (
 );
 
 -- ==========================================
--- PHẦN 3: XÁC THỰC & BẢO MẬT (JWT Auth Lifecycle)
+-- PHẦN 4: BẢO MẬT & PHIÊN ĐĂNG NHẬP (JWT)
 -- ==========================================
 
--- 7. BẢNG REFRESH TOKEN (Duy trì phiên đăng nhập)
+-- 14. BẢNG REFRESH TOKEN (Cấp lại Access Token)
 CREATE TABLE refresh_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) NOT NULL,
@@ -135,7 +218,7 @@ CREATE TABLE refresh_tokens (
 );
 CREATE INDEX idx_refresh_tokens_token ON refresh_tokens(token);
 
--- 8. BẢNG PASSWORD RESET TOKEN (Quên mật khẩu)
+-- 15. BẢNG PASSWORD RESET (Quên mật khẩu)
 CREATE TABLE password_reset_tokens (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) NOT NULL,
@@ -148,72 +231,75 @@ CREATE TABLE password_reset_tokens (
 CREATE INDEX idx_password_reset_tokens_token ON password_reset_tokens(token);
 
 -- ==========================================
--- PHẦN 4: MASTER DATA (Chuẩn hóa dữ liệu danh mục)
+-- PHẦN 5: THÔNG BÁO THỜI GIAN THỰC (Web Push API)
 -- ==========================================
 
--- 9. Danh mục Loại sản phẩm (VD: Cà phê, Thịt heo, Lúa gạo)
-CREATE TABLE master_product_categories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code VARCHAR(50) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 10. Danh mục Đơn vị tính (VD: KG, Tấn, Thùng, Lít)
-CREATE TABLE master_units (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    code VARCHAR(20) UNIQUE NOT NULL,
-    name VARCHAR(50) NOT NULL,
-    is_deleted BOOLEAN DEFAULT FALSE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 11. Danh mục Địa chính (Tỉnh/Thành phố - Phục vụ GPS Mapping)
-CREATE TABLE master_locations (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    parent_id UUID REFERENCES master_locations(id), -- Để phân cấp Tỉnh -> Huyện -> Xã
-    name VARCHAR(255) NOT NULL,
-    type VARCHAR(20) CHECK (type IN ('PROVINCE', 'DISTRICT', 'WARD')),
-    is_deleted BOOLEAN DEFAULT FALSE
-);
-
--- ==========================================
--- PHẦN 5: NOTIFICATION & WEB PUSH (Thông báo đẩy)
--- ==========================================
-
--- 12. Quản lý Đăng ký Web Push (Lưu Token thiết bị)
+-- 16. BẢNG LƯU TRỮ TRÌNH DUYỆT (Web Push Subscription)
 CREATE TABLE notification_subscriptions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID REFERENCES users(id) NOT NULL,
-    endpoint TEXT NOT NULL, -- URL của trình duyệt (Google, Firefox, etc.)
-    p256dh VARCHAR(255) NOT NULL, -- Khóa công khai của trình duyệt
-    auth VARCHAR(255) NOT NULL, -- Khóa xác thực
-    device_type VARCHAR(100), -- Ví dụ: Chrome on Windows
+    endpoint TEXT NOT NULL, 
+    p256dh VARCHAR(255) NOT NULL, 
+    auth VARCHAR(255) NOT NULL, 
+    device_type VARCHAR(100), 
+    
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 13. Nội dung thông báo
+-- 17. BẢNG NỘI DUNG THÔNG BÁO (Lịch sử)
 CREATE TABLE notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    recipient_id UUID REFERENCES users(id) NOT NULL, -- Người nhận
+    recipient_id UUID REFERENCES users(id) NOT NULL, 
     title VARCHAR(255) NOT NULL,
     content TEXT NOT NULL,
-    link_url TEXT, -- Link để nhấn vào xem chi tiết lô hàng
+    link_url TEXT, 
     is_read BOOLEAN DEFAULT FALSE,
     
-    -- Phân loại thông báo (VD: Cảnh báo, Yêu cầu xác nhận, Hệ thống)
     type VARCHAR(50) DEFAULT 'INFO',
     CONSTRAINT chk_noti_type CHECK (type IN ('INFO', 'WARNING', 'ACTION_REQUIRED', 'SYSTEM')),
     
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 14. Cấu hình thông báo của người dùng (Bật/Tắt các loại thông báo)
+-- 18. BẢNG CẤU HÌNH THÔNG BÁO (User Settings)
 CREATE TABLE user_notification_settings (
     user_id UUID PRIMARY KEY REFERENCES users(id),
     enable_push BOOLEAN DEFAULT TRUE,
     enable_email BOOLEAN DEFAULT TRUE,
+    
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 18. BẢNG TOKEN BLACKLIST (Danh sách đen Access Token)
+CREATE TABLE token_blacklist (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    token VARCHAR(500) UNIQUE NOT NULL, -- JWT Access Token có thể khá dài
+    expiry_date TIMESTAMP NOT NULL,     -- Lưu thời gian hết hạn của token để sau này chạy Job dọn rác
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_token_blacklist_token ON token_blacklist(token);
+
+-- ==========================================
+-- PHẦN 6: SEED DATA (Dữ liệu mẫu cơ bản)
+-- ==========================================
+
+-- -- Seed Permissions
+-- INSERT INTO permissions (id, code, name, module, description) VALUES
+-- (gen_random_uuid(), 'ORG_UPDATE', 'Cập nhật thông tin tổ chức', 'IDENTITY', 'Quyền cập nhật thông tin chung của tổ chức'),
+-- (gen_random_uuid(), 'USER_CREATE', 'Tạo tài khoản nhân viên', 'IDENTITY', 'Quyền tạo mới tài khoản nhân viên trong tổ chức'),
+-- (gen_random_uuid(), 'BATCH_CREATE', 'Tạo lô hàng', 'TRACEABILITY', 'Quyền khởi tạo lô hàng nông sản mới')
+-- ON CONFLICT (code) DO NOTHING;
+
+-- -- Seed Roles
+-- INSERT INTO roles (id, code, name, description) VALUES
+-- (gen_random_uuid(), 'SYSTEM_ADMIN', 'Quản trị viên hệ thống', 'Quản trị toàn bộ hệ thống Blockchain Agridence'),
+-- (gen_random_uuid(), 'ORG_ADMIN', 'Quản trị viên tổ chức', 'Quản trị viên đại diện cho tổ chức (Farm, Factory, v.v.)'),
+-- (gen_random_uuid(), 'WAREHOUSE_STAFF', 'Nhân viên kho', 'Nhân viên thao tác với lô hàng trong kho')
+-- ON CONFLICT (code) DO NOTHING;
+
+-- -- Seed Role-Permissions Mapping (Giả lập cấp quyền cho ORG_ADMIN)
+-- INSERT INTO role_permissions (role_id, permission_id)
+-- SELECT r.id, p.id FROM roles r, permissions p
+-- WHERE r.code = 'ORG_ADMIN' AND p.code IN ('ORG_UPDATE', 'USER_CREATE')
+-- ON CONFLICT DO NOTHING;
