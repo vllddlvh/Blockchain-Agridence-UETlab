@@ -3,6 +3,7 @@ package BlockchainAgridence.uet.modules.identity.controller;
 
 import BlockchainAgridence.uet.modules.identity.dto.request.OrgRegistrationRequest;
 import BlockchainAgridence.uet.modules.identity.dto.request.OrgUpdateRequest;
+import BlockchainAgridence.uet.modules.identity.dto.response.OrgDocumentResponse;
 import BlockchainAgridence.uet.modules.identity.dto.response.OrgResponse;
 import BlockchainAgridence.uet.modules.identity.entity.OrgStatus;
 import BlockchainAgridence.uet.modules.identity.service.OrganizationService;
@@ -78,6 +79,19 @@ public class OrganizationController {
                 .code(1000)
                 .message("Cập nhật trạng thái tổ chức thành công")
                 .body(orgService.updateOrganizationStatus(id, status))
+                .build();
+    }
+
+    // API Thêm chứng chỉ / tài liệu mới cho tổ chức
+    @PreAuthorize("hasAuthority('ORG_UPDATE') or hasAuthority('SYSTEM_ORG_UPDATE')")
+    @PostMapping("/{id}/documents")
+    public ApiResponse<OrgDocumentResponse> addDocument(
+            @PathVariable UUID id,
+            @RequestBody @Valid BlockchainAgridence.uet.modules.identity.dto.request.OrgDocumentCreateRequest request) {
+        return ApiResponse.<OrgDocumentResponse>builder()
+                .code(1000)
+                .message("Thêm tài liệu/chứng chỉ thành công")
+                .body(orgService.addDocumentToOrganization(id, request))
                 .build();
     }
 }

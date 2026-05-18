@@ -15,5 +15,4 @@ public class OrgUpdateRequest {
 
     private String addressDetail;
 
-    private String licenseCid; // Mã file ảnh giấy phép trên IPFS
 }

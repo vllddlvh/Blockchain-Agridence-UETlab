@@ -35,7 +35,6 @@ public class User extends BaseEntity {
     @Column(name = "full_name", length = 100)
     private String fullName;
 
-    // Quan hệ Multi-role (RBAC)
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "user_roles",

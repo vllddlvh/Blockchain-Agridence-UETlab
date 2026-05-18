@@ -52,7 +52,6 @@ CREATE TABLE organizations (
     name VARCHAR(255) NOT NULL,
     tax_code VARCHAR(50),
     representative_name VARCHAR(255), -- Người đại diện pháp luật
-    license_cid VARCHAR(255),         -- CID lưu trữ bản scan Giấy phép KD trên IPFS
     address_detail TEXT,              -- Trụ sở chính
     
     org_type VARCHAR(50) NOT NULL,
@@ -70,6 +69,40 @@ CREATE TABLE organizations (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- =======================================================================
+-- Bảng lưu trữ các tài liệu, chứng chỉ của Tổ chức (Tích hợp IPFS)
+-- =======================================================================
+CREATE TABLE organization_documents (
+    -- Khóa chính
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    
+    -- Khóa ngoại liên kết với bảng organizations
+    org_id UUID NOT NULL,
+    
+    -- Thông tin tài liệu
+    document_type VARCHAR(50) NOT NULL,  -- VD: 'BUSINESS_LICENSE', 'VIETGAP', 'GLOBALGAP', 'OCOP'
+    document_name VARCHAR(255) NOT NULL, -- VD: 'Giấy chứng nhận VietGAP 2026'
+    cid VARCHAR(100) NOT NULL,           -- Mã IPFS Hash (VD: Qm...)
+    expiration_date DATE,                -- Ngày hết hạn chứng chỉ (có thể null nếu giấy tờ vô thời hạn)
+
+    -- Các trường Audit (Đồng bộ với BaseEntity trong Spring Boot)
+    created_by VARCHAR(100),
+    updated_by VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP,
+    is_deleted BOOLEAN DEFAULT FALSE,    -- Phục vụ Soft Delete
+    version BIGINT DEFAULT 0,            -- Phục vụ Optimistic Locking
+
+    -- Định nghĩa Ràng buộc khóa ngoại
+    CONSTRAINT fk_org_docs_organization FOREIGN KEY (org_id) REFERENCES organizations(id)
+);
+
+-- Tạo Index để tăng tốc độ truy vấn khi tải hồ sơ của một tổ chức cụ thể
+CREATE INDEX idx_org_docs_org_id ON organization_documents(org_id);
+
+-- Tạo Index để phục vụ các Cronjob quét giấy tờ sắp hết hạn theo loại
+CREATE INDEX idx_org_docs_type_expire ON organization_documents(document_type, expiration_date);
 
 -- 5. BẢNG NHÂN VIÊN (Tài khoản thao tác Off-chain)
 CREATE TABLE users (

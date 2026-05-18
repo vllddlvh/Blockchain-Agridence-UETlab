@@ -1,9 +1,12 @@
 package BlockchainAgridence.uet.modules.identity.mapper;
 
+import BlockchainAgridence.uet.modules.identity.dto.request.OrgDocumentCreateRequest;
 import BlockchainAgridence.uet.modules.identity.dto.request.OrgRegistrationRequest;
 import BlockchainAgridence.uet.modules.identity.dto.request.OrgUpdateRequest;
+import BlockchainAgridence.uet.modules.identity.dto.response.OrgDocumentResponse;
 import BlockchainAgridence.uet.modules.identity.dto.response.OrgResponse;
 import BlockchainAgridence.uet.modules.identity.entity.Organization;
+import BlockchainAgridence.uet.modules.identity.entity.OrganizationDocument;
 import org.mapstruct.Mapper;
 import org.mapstruct.MappingTarget;
 import org.mapstruct.ReportingPolicy;
@@ -14,6 +17,9 @@ public interface OrganizationMapper {
 
     // Ánh xạ từ Entity sang Response DTO
     OrgResponse toResponse(Organization organization);
+
+    OrgDocumentResponse toDocumentResponse(OrganizationDocument document);
+    OrganizationDocument toDocumentEntity(OrgDocumentCreateRequest request);
 
     // Ánh xạ từ Request DTO sang Entity khi tạo mới
     Organization toEntity(OrgRegistrationRequest request);

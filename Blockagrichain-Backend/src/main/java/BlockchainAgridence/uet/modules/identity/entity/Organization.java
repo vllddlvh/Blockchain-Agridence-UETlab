@@ -31,8 +31,9 @@ public class Organization extends BaseEntity {
     @Column(name = "representative_name")
     private String representativeName;
 
-    @Column(name = "license_cid")
-    private String licenseCid;
+    @OneToMany(mappedBy = "organization", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<OrganizationDocument> documents = new ArrayList<>();
 
     @Column(name = "address_detail", columnDefinition = "TEXT")
     private String addressDetail;
@@ -49,4 +50,10 @@ public class Organization extends BaseEntity {
     @Column(name = "reputation_score")
     @Builder.Default
     private Integer reputationScore = 100;
+
+    // Hàm tiện ích để thêm document vào tổ chức một cách an toàn
+    public void addDocument(OrganizationDocument document) {
+        documents.add(document);
+        document.setOrganization(this);
+    }
 }
