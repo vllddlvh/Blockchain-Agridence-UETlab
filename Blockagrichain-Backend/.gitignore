@@ -34,8 +34,8 @@ build/
 ### VS Code ###
 .vscode/
 
-# Application configuration files (environment-specific)
-application.yaml
-application.yml
-!application-example.yaml
-!application-example.yml
+## Application configuration files (environment-specific)
+#application.yaml
+#application.yml
+#!application-example.yaml
+#!application-example.yml
