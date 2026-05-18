@@ -22,6 +22,7 @@ public interface OrganizationMapper {
     OrganizationDocument toDocumentEntity(OrgDocumentCreateRequest request);
 
     // Ánh xạ từ Request DTO sang Entity khi tạo mới
+    @org.mapstruct.Mapping(target = "documents", ignore = true)
     Organization toEntity(OrgRegistrationRequest request);
 
     // Cập nhật các trường từ Request DTO vào Entity đã tồn tại trong DB
