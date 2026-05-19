@@ -176,3 +176,24 @@
   flex-grow: 1;
   overflow-y: auto;
 }
+
+.nav-item {
+  text-decoration: none;
+}
+
+.user-info-topbar {
+  display: flex;
+  flex-direction: column;
+}
+
+.user-name {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-main);
+  line-height: 1.2;
+}
+
+.user-email {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
