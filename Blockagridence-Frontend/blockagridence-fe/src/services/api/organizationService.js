@@ -56,6 +56,23 @@ const organizationService = {
     });
     return response.data.body;
   },
+
+  /**
+   * Thêm chứng chỉ / tài liệu mới cho tổ chức
+   * POST /api/v1/organizations/{id}/documents
+   * @param {string} id - UUID
+   * @param {{
+   *   documentType: string,
+   *   documentName: string,
+   *   cid: string,
+   *   expirationDate?: string
+   * }} documentData
+   * @returns {OrgDocumentResponse}
+   */
+  addDocument: async (id, documentData) => {
+    const response = await axiosInstance.post(`/api/v1/organizations/${id}/documents`, documentData);
+    return response.data.body;
+  },
 };
 
 export default organizationService;
