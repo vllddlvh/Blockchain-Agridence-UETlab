@@ -2,14 +2,18 @@ package BlockchainAgridence.uet.modules.identity.service;
 
 import BlockchainAgridence.uet.exception.AppException;
 import BlockchainAgridence.uet.exception.ErrorCode;
+import BlockchainAgridence.uet.modules.identity.dto.request.OrgDocumentCreateRequest;
 import BlockchainAgridence.uet.modules.identity.dto.request.OrgRegistrationRequest;
 import BlockchainAgridence.uet.modules.identity.dto.request.OrgUpdateRequest;
+import BlockchainAgridence.uet.modules.identity.dto.response.OrgDocumentResponse;
 import BlockchainAgridence.uet.modules.identity.dto.response.OrgResponse;
 import BlockchainAgridence.uet.modules.identity.entity.OrgStatus;
 import BlockchainAgridence.uet.modules.identity.entity.Organization;
+import BlockchainAgridence.uet.modules.identity.entity.OrganizationDocument;
 import BlockchainAgridence.uet.modules.identity.entity.Role;
 import BlockchainAgridence.uet.modules.identity.entity.User;
 import BlockchainAgridence.uet.modules.identity.mapper.OrganizationMapper;
+import BlockchainAgridence.uet.modules.identity.repository.OrganizationDocumentRepository;
 import BlockchainAgridence.uet.modules.identity.repository.OrganizationRepository;
 import BlockchainAgridence.uet.modules.identity.repository.RoleRepository;
 import BlockchainAgridence.uet.modules.identity.repository.UserRepository;
@@ -31,6 +35,7 @@ import java.util.stream.Collectors;
 public class OrganizationService {
 
     private final OrganizationRepository organizationRepository;
+    private final OrganizationDocumentRepository documentRepository;
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final OrganizationMapper organizationMapper;
@@ -55,6 +60,15 @@ public class OrganizationService {
         // 2. Lưu thông tin Tổ chức (Mặc định trạng thái là PENDING)
         Organization org = organizationMapper.toEntity(request);
         org.setStatus(OrgStatus.PENDING);
+        
+        // Xử lý móc nối giấy tờ pháp lý ngay lúc đăng ký
+        if (request.getDocuments() != null && !request.getDocuments().isEmpty()) {
+            for (OrgDocumentCreateRequest docReq : request.getDocuments()) {
+                OrganizationDocument doc = organizationMapper.toDocumentEntity(docReq);
+                org.addDocument(doc); // Dùng hàm tiện ích đã định nghĩa trong Entity
+            }
+        }
+
         org = organizationRepository.save(org);
 
         // 3. Tìm Role ORG_ADMIN trong hệ thống để chuẩn bị gán
@@ -112,5 +126,17 @@ public class OrganizationService {
         org = organizationRepository.save(org);
 
         return organizationMapper.toResponse(org);
+    }
+
+    @Transactional
+    public OrgDocumentResponse addDocumentToOrganization(UUID orgId, OrgDocumentCreateRequest request) {
+        Organization org = organizationRepository.findById(orgId)
+                .orElseThrow(() -> new AppException(ErrorCode.ORG_NOT_FOUND));
+
+        OrganizationDocument document = organizationMapper.toDocumentEntity(request);
+        document.setOrganization(org);
+        document = documentRepository.save(document);
+
+        return organizationMapper.toDocumentResponse(document);
     }
 }

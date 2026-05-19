@@ -20,7 +20,7 @@ public class OrgResponse {
     private String name;
     private String taxCode;
     private String representativeName;
-    private String licenseCid;
+    private java.util.List<OrgDocumentResponse> documents;
     private String addressDetail;
     private OrgType orgType;
     private OrgStatus status;

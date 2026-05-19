@@ -22,6 +22,10 @@ public class OrgRegistrationRequest {
 
     private String representativeName;
 
+    @jakarta.validation.constraints.NotEmpty(message = "MUST_PROVIDE_AT_LEAST_ONE_DOCUMENT")
+    @jakarta.validation.Valid
+    private java.util.List<OrgDocumentCreateRequest> documents; // Khuyến khích gửi toàn bộ giấy tờ lúc đăng ký
+
     private String addressDetail;
 
     @NotNull(message = "ORG_TYPE_NULL")
